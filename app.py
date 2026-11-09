@@ -517,8 +517,25 @@ with tab4:
         "la estación base dispone de la ubicación y de la condición del objeto "
         "de forma simultánea."
     )
+    st.divider()
+    st.subheader("Referencias")
+    st.markdown(
+        """
+    - Patwari, N. (2005). *Location estimation in sensor networks* 
+      [Doctoral dissertation, University of Michigan]. Deep Blue. 
+      http://hdl.handle.net/2027.42/125472
+
+    - Rappaport, T. S. (2001). *Wireless communications: Principles and 
+      practice* (2nd ed.). Prentice Hall PTR.
+
+    - Shannon, C. E. (1949). Communication in the presence of noise. 
+      *Proceedings of the IRE, 37*(1), 10–21. 
+      https://doi.org/10.1109/JRPROC.1949.232969
+    """
+    )
 
 st.caption(
     "Los modelos presentados son simplificaciones con fines didácticos. Los sistemas "
     "reales incorporan filtrado (por ejemplo, Kalman), calibración y fusión de sensores."
 )
+
