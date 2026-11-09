@@ -1,17 +1,26 @@
 """
 Divulgación: Aplicaciones de Radiolocalización y Telemetría
 Ejecutar con:  streamlit run app_radiolocalizacion_telemetria.py
-Dependencias:  pip install streamlit numpy matplotlib
+Dependencias:  pip install streamlit numpy plotly
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 import streamlit as st
 
 st.set_page_config(
     page_title="Radiolocalización y Telemetría",
     layout="wide",
 )
+
+PLANTILLA = "plotly_white"
+CONFIG_PLOTLY = {"displaylogo": False, "scrollZoom": True}
+
+
+def hora_hhmm(h):
+    """Convierte horas decimales a formato HH:MM."""
+    return f"{int(h):02d}:{int(round((h % 1) * 60)):02d}"
+
 
 st.title("Aplicaciones de Radiolocalización y Telemetría")
 st.caption(
@@ -151,8 +160,12 @@ with tab2:
 
     st.divider()
     st.markdown("#### Simulación interactiva")
+    st.caption(
+        "Pase el cursor sobre los elementos para ver sus valores, use la rueda "
+        "del ratón para acercar y haga clic en la leyenda para ocultar o mostrar series."
+    )
 
-    col_ctrl, col_plot = st.columns([1, 2])
+    col_ctrl, col_plot = st.columns([1, 3])
 
     with col_ctrl:
         x_real = st.slider("Posición real X (m)", 0.0, 10.0, 6.0, 0.5)
@@ -185,38 +198,108 @@ with tab2:
     sigma_ln = sigma * np.log(10) / (10 * n_exp)
 
     with col_plot:
-        fig, (ax1, ax2) = plt.subplots(
-            1, 2, figsize=(11, 4.8), gridspec_kw={"width_ratios": [1.3, 1]}
-        )
+        g1, g2 = st.columns([1.2, 1])
+
+        # Mapa de trilateración
+        fig_mapa = go.Figure()
+        theta = np.linspace(0, 2 * np.pi, 200)
+        colores = ["#1f77b4", "#2ca02c", "#9467bd"]
 
         for i, (a, r) in enumerate(zip(anclas, d_est)):
-            ax1.add_patch(plt.Circle(a, r, fill=False, ls="--", alpha=0.5))
-            ax1.annotate(f"Ancla {i + 1}", a, textcoords="offset points",
-                         xytext=(6, 6), fontsize=8)
-        ax1.scatter(*anclas.T, marker="^", s=120, c="tab:blue", label="Anclas")
-        ax1.scatter(*real, c="green", s=120, label="Posición real", zorder=5)
-        ax1.scatter(*est, c="red", marker="x", s=140, label="Posición estimada", zorder=5)
-        ax1.plot([real[0], est[0]], [real[1], est[1]], "r:", alpha=0.7)
-        ax1.set_xlim(-6, 16)
-        ax1.set_ylim(-6, 16)
-        ax1.set_aspect("equal")
-        ax1.set_xlabel("x (m)")
-        ax1.set_ylabel("y (m)")
-        ax1.set_title("Trilateración con distancias estimadas $\\hat{d}_i$")
-        ax1.grid(alpha=0.3)
-        ax1.legend(loc="upper right", fontsize=8)
+            fig_mapa.add_trace(go.Scatter(
+                x=a[0] + r * np.cos(theta),
+                y=a[1] + r * np.sin(theta),
+                mode="lines",
+                line=dict(color=colores[i], dash="dash", width=1.5),
+                name=f"Circunferencia {i + 1}",
+                hovertemplate=(
+                    f"Ancla {i + 1}<br>d̂ = {r:.2f} m<br>"
+                    f"d real = {d_real[i]:.2f} m<extra></extra>"
+                ),
+            ))
 
-        d = np.linspace(1, 15, 200)
-        ax2.plot(d, P0 - 10 * n_exp * np.log10(d / d0), label="Modelo $RSSI(d)$")
-        ax2.scatter(d_real, rssi, c="orange", zorder=5, label="Mediciones con ruido")
-        ax2.set_xlabel("Distancia $d$ (m)")
-        ax2.set_ylabel("RSSI (dBm)")
-        ax2.set_title("Potencia recibida en función de la distancia")
-        ax2.grid(alpha=0.3)
-        ax2.legend(fontsize=8)
+        fig_mapa.add_trace(go.Scatter(
+            x=anclas[:, 0], y=anclas[:, 1], mode="markers+text",
+            marker=dict(symbol="triangle-up", size=14, color="#1f77b4"),
+            text=[f"Ancla {i + 1}" for i in range(3)],
+            textposition="top center",
+            name="Anclas",
+            hovertemplate="Ancla<br>(%{x:.1f}, %{y:.1f}) m<extra></extra>",
+        ))
+        fig_mapa.add_trace(go.Scatter(
+            x=[real[0], est[0]], y=[real[1], est[1]], mode="lines",
+            line=dict(color="red", dash="dot", width=2),
+            name=f"Error e = {error:.2f} m",
+            hovertemplate=f"Error e = {error:.2f} m<extra></extra>",
+        ))
+        fig_mapa.add_trace(go.Scatter(
+            x=[real[0]], y=[real[1]], mode="markers",
+            marker=dict(symbol="circle", size=13, color="green"),
+            name="Posición real",
+            hovertemplate="Real<br>(%{x:.2f}, %{y:.2f}) m<extra></extra>",
+        ))
+        fig_mapa.add_trace(go.Scatter(
+            x=[est[0]], y=[est[1]], mode="markers",
+            marker=dict(symbol="x", size=13, color="red", line=dict(width=2)),
+            name="Posición estimada",
+            hovertemplate="Estimada<br>(%{x:.2f}, %{y:.2f}) m<extra></extra>",
+        ))
 
-        fig.tight_layout()
-        st.pyplot(fig)
+        fig_mapa.update_layout(
+            template=PLANTILLA,
+            title="Trilateración con distancias estimadas d̂<sub>i</sub>",
+            xaxis=dict(title="x (m)", range=[-8, 18], zeroline=False),
+            yaxis=dict(title="y (m)", range=[-8, 18], scaleanchor="x",
+                       scaleratio=1, zeroline=False),
+            legend=dict(orientation="h", yanchor="top", y=-0.2, x=0),
+            margin=dict(l=10, r=10, t=50, b=10),
+            height=520,
+        )
+
+        # Curva RSSI(d)
+        d_curva = np.linspace(1, 15, 200)
+        rssi_curva = P0 - 10 * n_exp * np.log10(d_curva / d0)
+
+        fig_rssi = go.Figure()
+        fig_rssi.add_trace(go.Scatter(
+            x=np.concatenate([d_curva, d_curva[::-1]]),
+            y=np.concatenate([rssi_curva + sigma, (rssi_curva - sigma)[::-1]]),
+            fill="toself", fillcolor="rgba(31,119,180,0.15)",
+            line=dict(width=0), hoverinfo="skip",
+            name="Banda ±σ",
+        ))
+        fig_rssi.add_trace(go.Scatter(
+            x=d_curva, y=rssi_curva, mode="lines",
+            line=dict(color="#1f77b4", width=2.5),
+            name="Modelo RSSI(d)",
+            hovertemplate="d = %{x:.2f} m<br>RSSI = %{y:.1f} dBm<extra></extra>",
+        ))
+        fig_rssi.add_trace(go.Scatter(
+            x=d_real, y=rssi, mode="markers+text",
+            marker=dict(size=12, color="orange", line=dict(width=1, color="black")),
+            text=[f"A{i + 1}" for i in range(3)],
+            textposition="top right",
+            customdata=np.column_stack([d_est]),
+            name="Mediciones con ruido",
+            hovertemplate=(
+                "d real = %{x:.2f} m<br>RSSI medido = %{y:.1f} dBm<br>"
+                "d̂ = %{customdata[0]:.2f} m<extra></extra>"
+            ),
+        ))
+        fig_rssi.update_layout(
+            template=PLANTILLA,
+            title="Potencia recibida en función de la distancia",
+            xaxis=dict(title="Distancia d (m)"),
+            yaxis=dict(title="RSSI (dBm)"),
+            legend=dict(orientation="h", yanchor="top", y=-0.2, x=0),
+            margin=dict(l=10, r=10, t=50, b=10),
+            height=520,
+        )
+
+        with g1:
+            st.plotly_chart(fig_mapa, width='stretch', config=CONFIG_PLOTLY)
+        with g2:
+            st.plotly_chart(fig_rssi, width='stretch', config=CONFIG_PLOTLY)
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Error de posición e", f"{error:.2f} m")
@@ -226,13 +309,13 @@ with tab2:
               help="σ·ln(10) / (10·n), expresada en porcentaje.")
 
     st.info(
-        "**Interpretación.** El panel izquierdo muestra que, al aumentar σ, las "
-        "circunferencias dejan de intersecarse en un único punto y el error e "
-        "crece. El panel derecho evidencia que las mediciones se dispersan "
-        "alrededor de la curva teórica. La dispersión relativa teórica "
-        "cuantifica este efecto y disminuye al aumentar n. En sistemas reales "
-        "se promedian múltiples mediciones o se aplican filtros (por ejemplo, "
-        "el filtro de Kalman) para reducir el error."
+        "**Interpretación.** En el mapa, al aumentar σ las circunferencias dejan "
+        "de intersecarse en un único punto y el error e crece. En la gráfica de "
+        "potencia, la banda sombreada representa ±σ alrededor del modelo ideal: "
+        "las mediciones tienden a caer dentro de ella. La dispersión relativa "
+        "teórica cuantifica este efecto y disminuye al aumentar n. En sistemas "
+        "reales se promedian múltiples mediciones o se aplican filtros (por "
+        "ejemplo, el filtro de Kalman) para reducir el error."
     )
 
 with tab3:
@@ -282,8 +365,13 @@ with tab3:
 
     st.divider()
     st.markdown("#### Simulación interactiva")
+    st.caption(
+        "Pase el cursor sobre los puntos para ver hora y lectura. Use el "
+        "selector inferior para desplazarse en el tiempo o seleccione una "
+        "región para acercar."
+    )
 
-    k1, k2 = st.columns([1, 2])
+    k1, k2 = st.columns([1, 3])
 
     with k1:
         ruido_s = st.slider("Ruido del sensor σₛ (°C)", 0.0, 3.0, 0.8, 0.1)
@@ -298,26 +386,70 @@ with tab3:
     recibido = rng_t.random(t.size) > (p_perdida / 100)
     alertas = recibido & (medida > umbral)
     esperados = t.size * (1 - p_perdida / 100)
+    horas = np.array([hora_hhmm(h) for h in t])
 
     with k2:
-        fig2, ax = plt.subplots(figsize=(10, 4.5))
-        ax.plot(t, verdadera, c="gray", lw=1.5, label="Señal real $T(t)$")
-        ax.scatter(t[recibido], medida[recibido], s=14, c="tab:blue",
-                   label="Paquetes recibidos $y_k$")
-        ax.scatter(t[~recibido], medida[~recibido], s=30, facecolors="none",
-                   edgecolors="red", label="Paquetes perdidos")
-        ax.scatter(t[alertas], medida[alertas], s=60, c="orange",
-                   marker="*", zorder=5, label="Alerta $a_k = 1$")
-        ax.axhline(umbral, c="red", ls="--", alpha=0.6, label="Umbral $T_u$")
-        ax.set_xlabel("Hora del día (h)")
-        ax.set_ylabel("Temperatura (°C)")
-        ax.set_xlim(0, 24)
-        ax.set_xticks(range(0, 25, 3))
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=8, loc="lower right")
-        ax.set_title("Flujo de telemetría durante 24 horas")
-        fig2.tight_layout()
-        st.pyplot(fig2)
+        fig_t = go.Figure()
+
+        fig_t.add_hrect(
+            y0=umbral, y1=max(40.0, umbral + 1), line_width=0,
+            fillcolor="rgba(214,39,40,0.08)",
+        )
+
+        fig_t.add_trace(go.Scatter(
+            x=t, y=verdadera, mode="lines",
+            line=dict(color="gray", width=2),
+            name="Señal real T(t)",
+            customdata=horas,
+            hovertemplate="%{customdata}<br>T = %{y:.2f} °C<extra></extra>",
+        ))
+        fig_t.add_trace(go.Scatter(
+            x=t[recibido], y=medida[recibido], mode="markers",
+            marker=dict(size=7, color="#1f77b4"),
+            customdata=horas[recibido],
+            name="Paquetes recibidos y<sub>k</sub>",
+            hovertemplate="%{customdata}<br>y = %{y:.2f} °C<extra>Recibido</extra>",
+        ))
+        fig_t.add_trace(go.Scatter(
+            x=t[~recibido], y=medida[~recibido], mode="markers",
+            marker=dict(size=9, color="rgba(0,0,0,0)",
+                        line=dict(width=1.5, color="red")),
+            customdata=horas[~recibido],
+            name="Paquetes perdidos",
+            hovertemplate=(
+                "%{customdata}<br>Lectura no recibida: %{y:.2f} °C"
+                "<extra>Perdido</extra>"
+            ),
+        ))
+        fig_t.add_trace(go.Scatter(
+            x=t[alertas], y=medida[alertas], mode="markers",
+            marker=dict(symbol="star", size=15, color="orange",
+                        line=dict(width=1, color="black")),
+            customdata=horas[alertas],
+            name="Alerta a<sub>k</sub> = 1",
+            hovertemplate="%{customdata}<br>y = %{y:.2f} °C<extra>Alerta</extra>",
+        ))
+        fig_t.add_hline(
+            y=umbral, line=dict(color="red", dash="dash", width=1.5),
+            annotation_text=f"Umbral T<sub>u</sub> = {umbral:.1f} °C",
+            annotation_position="top left",
+        )
+
+        fig_t.update_layout(
+            template=PLANTILLA,
+            title="Flujo de telemetría durante 24 horas",
+            xaxis=dict(
+                title="Hora del día (h)", range=[0, 24],
+                tickmode="linear", tick0=0, dtick=3,
+                rangeslider=dict(visible=True, thickness=0.07),
+            ),
+            yaxis=dict(title="Temperatura (°C)"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+            margin=dict(l=10, r=10, t=90, b=10),
+            height=560,
+            hovermode="closest",
+        )
+        st.plotly_chart(fig_t, width='stretch', config=CONFIG_PLOTLY)
 
     r1, r2, r3, r4 = st.columns(4)
     r1.metric("Paquetes enviados N", int(t.size))
@@ -330,11 +462,12 @@ with tab3:
     st.info(
         "**Interpretación.** La curva gris representa la variable física real, "
         "mientras que los puntos azules corresponden únicamente a la información "
-        "disponible en la estación base. El número de paquetes recibidos "
-        "fluctúa alrededor de su valor esperado N(1 − p). Cuando p es elevada, "
-        "puede perderse el intervalo en que se supera el umbral, por lo que los "
-        "sistemas reales incorporan confirmaciones de recepción (ACK), "
-        "retransmisiones y almacenamiento local en el nodo sensor."
+        "disponible en la estación base. La región sombreada indica la zona de "
+        "alerta. El número de paquetes recibidos fluctúa alrededor de su valor "
+        "esperado N(1 − p). Cuando p es elevada, puede perderse el intervalo en "
+        "que se supera el umbral, por lo que los sistemas reales incorporan "
+        "confirmaciones de recepción (ACK), retransmisiones y almacenamiento "
+        "local en el nodo sensor."
     )
 
 with tab4:
@@ -364,8 +497,8 @@ with tab4:
 
 </div>
 """,
-unsafe_allow_html=True
-)
+        unsafe_allow_html=True,
+    )
 
     st.divider()
     st.markdown("#### Relación entre ambas disciplinas")
